@@ -1,0 +1,37 @@
+# Core
+torch==2.5.1+cu124
+torchvision==0.20.1+cu124
+torchaudio==2.5.1+cu124
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+# Model & training
+transformers>=4.47,<5
+accelerate>=0.30
+peft>=0.10
+bitsandbytes>=0.43
+trl==0.8.6
+
+# LlamaFactory (SFT trainer for Stage 1 Step 2)
+# Install separately: pip install git+https://github.com/hiyouga/LLaMA-Factory.git
+
+# Diffusion (Stage 2 PNG generation)
+diffusers>=0.27
+safetensors
+
+# Vectorization (Stage 2)
+vtracer
+
+# SVG rendering / filtering
+cairosvg
+Pillow
+
+# CLIP reward
+# (included in transformers)
+
+# DPO scoring
+openai>=1.0
+
+# Utilities
+datasets
+sentencepiece
+tiktoken
