@@ -135,13 +135,14 @@ valid XML code whose rendered image matches a natural-language scene. General
 vision-language models can produce SVG snippets, but they often collapse on
 complex prompts, drawing one salient object repeatedly instead of composing a
 scene. We present \textbf{DiffuSVG}, a two-stage pipeline that first teaches SVG
-syntax with supervised fine-tuning and preference optimization, then improves
-visual fidelity with diffusion-guided group reinforcement learning. The system
-uses a plan-then-draw prompting format, synthetic SVG supervision, DPO
-preference pairs, Stable Diffusion reference images, and a CLIP-based reward
-augmented with an element-count bonus. The final pipeline trains Qwen2.5-VL-7B
-with LoRA on a single A100 GPU and is designed to improve medium and complex
-multi-object SVG scenes while remaining fully reproducible from scripts.
+syntax on complex scene prompts with supervised fine-tuning and preference
+optimization, then improves visual fidelity with diffusion-guided group
+reinforcement learning. The system uses a plan-then-draw prompting format,
+complex-prompt synthetic SVG supervision, DPO preference pairs, Stable Diffusion
+reference images, and a CLIP-based reward augmented with an element-count bonus.
+The final pipeline trains Qwen2.5-VL-7B with LoRA on a single A100 GPU and is
+designed to improve medium and complex multi-object SVG scenes while remaining
+fully reproducible from scripts.
 \end{abstract}
 
 \vspace{0.35em}
@@ -178,7 +179,7 @@ This paper describes:
 \begin{itemize}
   \item a reproducible two-stage training pipeline for text-to-SVG generation;
   \item a plan-then-draw prompt that reduces object fixation in complex scenes;
-  \item a synthetic SFT and DPO pipeline requiring no human-labeled SVG corpus;
+  \item a complex-prompt SFT and DPO pipeline requiring no human-labeled SVG corpus;
   \item a diffusion-guided GRPO stage using CLIP-I, CLIP-T, and element-count
         rewards;
   \item an implementation designed for a single NVIDIA A100 GPU.
@@ -187,8 +188,9 @@ This paper describes:
 \section{Pipeline Overview}
 
 The method separates SVG generation into two learning problems. Stage 1 teaches
-the model to produce valid, colorful SVG code. Stage 2 teaches the model to make
-rendered SVGs visually match complex scene prompts.
+the model to produce valid, colorful SVG code from complex multi-object scene
+prompts. Stage 2 teaches the model to make rendered SVGs visually match
+diffusion references for those complex scenes.
 
 \begin{figure*}[t]
 \centering
@@ -204,7 +206,7 @@ rendered SVGs visually match complex scene prompts.
 
   % Row 1: synthetic supervision
   \node[data, text width=2.25cm] (pool) at (1.4,0)
-    {\textbf{Prompt pool}\\objects +\\layered scenes};
+    {\textbf{Complex prompts}\\\texttt{prompts.txt}\\265 scenes};
   \node[proc=blueA, text width=2.35cm] (cot) at (4.35,0)
     {\textbf{Plan prompt}\\objects, positions,\\colors};
   \node[proc=grayA, text width=2.45cm] (base) at (7.45,0)
@@ -212,7 +214,7 @@ rendered SVGs visually match complex scene prompts.
   \node[data, text width=2.25cm] (raw) at (10.55,0)
     {\textbf{Raw SVG}\\extract\\\texttt{<svg>}};
   \node[proc=blueA, text width=2.55cm] (filter) at (13.65,0)
-    {\textbf{Filter}\\viewBox 200\\min 5 fills};
+    {\textbf{Quality gate}\\8 fills\\4 colors\\700 chars};
   \node[data, text width=2.35cm] (dsft) at (16.85,0)
     {\textbf{$D_{\mathrm{SFT}}$}\\1000\\prompt/SVG rows};
 
@@ -271,8 +273,8 @@ rendered SVGs visually match complex scene prompts.
 \end{tikzpicture}}
 \caption{Detailed DiffuSVG pipeline. The flow is split into three non-overlapping
 lanes: synthetic SVG data generation, SFT/DPO training, and diffusion-guided
-GRPO. Dataset artifacts are repeated at lane boundaries to keep the visual
-layout clear while preserving the actual dependency structure.}
+GRPO. Stage 1 and DPO both draw from the same complex scene prompt file, while
+dataset artifacts are repeated at lane boundaries to keep the layout clear.}
 \label{fig:pipeline}
 \end{figure*}
 
@@ -363,8 +365,12 @@ expected scene inventory.
 \subsection{Synthetic SFT Data}
 
 No curated SVG dataset is assumed. Instead, the base Qwen2.5-VL model generates
-its own supervised examples from a prompt pool containing simple, medium, and
-complex scenes. Each output is standardized and filtered before being saved.
+its own supervised examples from \texttt{prompts.txt}, a file of 265 complex
+scene prompts containing backgrounds, midground objects, foreground details,
+and spatial relations. This deliberately shifts Stage 1 away from simple icons:
+the model sees barns, harbors, reefs, castles, skylines, beaches, waterfalls,
+and other multi-object layouts before DPO or GRPO begins. Each output is
+standardized and filtered before being saved.
 
 \begin{equation}
 D_{\mathrm{SFT}} =
@@ -374,13 +380,16 @@ D_{\mathrm{SFT}} =
 The filter keeps an SVG only if it contains:
 \begin{itemize}
   \item a valid \texttt{<svg>} root and closing tag;
-  \item at least five filled elements;
+  \item at least eight filled SVG elements;
+  \item at least four unique visible fill colors;
+  \item at least 700 SVG characters;
   \item a canonical \texttt{viewBox="0 0 200 200"};
-  \item visible color attributes.
+  \item no exact duplicate of an already saved SVG.
 \end{itemize}
 
-The element threshold intentionally rejects sparse outputs such as a background
-and two blobs. This improves the training signal for complex scenes.
+These gates reject sparse outputs such as a background and two blobs, low-color
+outputs, very short drawings, and repeated generations. This makes Stage 1 a
+complex-scene syntax curriculum rather than a generic icon dataset.
 
 \subsection{Supervised Fine-Tuning}
 
@@ -407,9 +416,10 @@ A100 while preserving the base model's broad language and code knowledge.
 \subsection{Direct Preference Optimization}
 
 SFT improves syntax but does not guarantee visual quality. Therefore, the
-\(M_{\mathrm{SFT}}\) model generates five candidates per prompt. A scoring
-function ranks candidates by renderability, color, element count, and prompt
-coverage. The best and worst candidates form DPO pairs.
+\(M_{\mathrm{SFT}}\) model generates five candidates per prompt using the same
+complex prompt source as Stage 1. A scoring function ranks candidates by
+renderability, color, element count, and prompt coverage. The best and worst
+candidates form DPO pairs.
 
 \begin{figure}[t]
 \centering
@@ -542,10 +552,11 @@ corpora. This keeps the pipeline reproducible and avoids manual annotation.
 \textbf{Dataset} & \textbf{Role} & \textbf{Size} \\
 \midrule
 \(D_{\mathrm{SFT}}\) &
-Conversation-format SVG examples generated by the base model and filtered for
-validity, color, and element count. & 1000 \\
+Conversation-format SVG examples generated from the 265 complex prompts in
+\texttt{prompts.txt}; filtered for validity, color variety, detail, and
+duplicates. & 1000 \\
 \(D_{\mathrm{pref}}\) &
-Chosen/rejected SVG pairs built from five candidates per prompt. & 1500 prompts \\
+Chosen/rejected SVG pairs built from five candidates per complex prompt. & 1500 prompts \\
 \(D_{\mathrm{GRPO}}\) &
 Complex prompts with SD-Turbo reference PNGs and vectorized SVG artifacts. & 1000 \\
 \bottomrule
@@ -554,7 +565,9 @@ Complex prompts with SD-Turbo reference PNGs and vectorized SVG artifacts. & 100
 
 The SFT generator uses temperature sampling rather than greedy decoding. Greedy
 decoding produced repeated templates; sampling increases diversity and gives
-DPO a broader candidate distribution.
+DPO a broader candidate distribution. The same complex prompt file is used in
+SFT and DPO so the model repeatedly practices background, midground, and
+foreground composition before the GRPO stage.
 
 \section{Implementation Details}
 
@@ -594,7 +607,9 @@ bash train.sh prompts.txt
 \textbf{Component} & \textbf{Setting} \\
 \midrule
 Base model & Qwen2.5-VL-7B-Instruct \\
+Prompt source & \texttt{prompts.txt}, 265 complex scene prompts \\
 SFT samples & 1000 \\
+SFT quality gate & at least 8 filled elements, 4 colors, 700 chars, no duplicates \\
 SFT LoRA & rank 64, alpha 128, 3 epochs \\
 DPO candidates & 5 per prompt \\
 DPO beta & 0.1 \\
