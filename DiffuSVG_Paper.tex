@@ -126,9 +126,7 @@
 \begin{center}
 {\LARGE\bfseries DiffuSVG: Diffusion-Guided Reinforcement Learning\\[-1pt]
 for Complex Scene SVG Generation\par}
-\vspace{0.35em}
-{\normalsize Anonymous Project Paper \quad $\cdot$ \quad 2026\par}
-\vspace{0.8em}
+\vspace{0.85em}
 \end{center}
 
 \begin{abstract}
@@ -194,60 +192,117 @@ rendered SVGs visually match complex scene prompts.
 
 \begin{figure*}[t]
 \centering
-\resizebox{0.96\textwidth}{!}{
-\begin{tikzpicture}[node distance=0.8cm and 0.9cm]
-  \node[proc=blueA, text width=2.5cm] (base) {Qwen2.5-VL-7B\\base model};
-  \node[proc=blueA, right=of base, text width=2.6cm] (synth) {Plan-then-draw\\SFT generation};
-  \node[data, right=of synth, text width=2.2cm] (dsft) {$D_{\mathrm{SFT}}$\\1000 SVG rows};
-  \node[proc=blueA, right=of dsft, text width=2.1cm] (sft) {SFT LoRA\\rank 64};
-  \node[model, right=of sft, text width=1.8cm] (msft) {$M_{\mathrm{SFT}}$};
-  \node[proc=blueA, right=of msft, text width=2.2cm] (dpoData) {5 candidates\\per prompt};
-  \node[data, right=of dpoData, text width=2.1cm] (dpref) {$D_{\mathrm{pref}}$\\DPO pairs};
-  \node[proc=blueA, right=of dpref, text width=1.8cm] (dpo) {DPO};
-  \node[model, right=of dpo, text width=1.9cm] (mfinal) {$M_{\mathrm{final}}$};
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.55cm and 0.58cm]
+  \node[proc=grayA, text width=2.25cm] (base)
+    {\textbf{Base model}\\Qwen2.5-VL-7B\\SVG priors};
+  \node[proc=blueA, right=of base, text width=2.55cm] (step1)
+    {\textbf{1. SFT data}\\\texttt{generate\_sft}\\plan then draw\\1000 kept rows};
+  \node[data, right=of step1, text width=2.45cm] (dsft)
+    {\textbf{Dataset}\\$D_{\mathrm{SFT}}$\\prompt + SVG\\min 5 elements};
+  \node[proc=blueA, right=of dsft, text width=2.25cm] (step2)
+    {\textbf{2. SFT}\\LoRA rank 64\\3 epochs\\SVG syntax};
+  \node[model, right=of step2, text width=1.75cm] (msft)
+    {$M_{\mathrm{SFT}}$};
 
-  \node[data, below=1.35cm of dsft, text width=2.25cm] (prompts) {complex\\prompts.txt};
-  \node[proc=violetA, right=of prompts, text width=2.1cm] (sd) {SD-Turbo\\PNG refs};
-  \node[proc=violetA, right=of sd, text width=2.05cm] (vec) {vectorize\\PNG $\to$ SVG};
-  \node[data, right=of vec, text width=2.25cm] (dgrpo) {$D_{\mathrm{GRPO}}$\\prompt, PNG, SVG};
-  \node[proc=violetA, right=of dgrpo, text width=2.1cm] (grpo) {GRPO\\$n=8$ samples};
-  \node[reward, above=0.72cm of grpo, text width=2.0cm] (rew) {CLIP-I\\CLIP-T\\element bonus};
-  \node[model, right=of grpo, text width=2.15cm] (out) {DiffuSVG\\final model};
+  \node[proc=blueA, below=0.92cm of msft, text width=2.35cm] (step3)
+    {\textbf{3. DPO data}\\5 candidates\\rank best/worst\\preference pairs};
+  \node[data, left=of step3, text width=2.3cm] (dpref)
+    {\textbf{Dataset}\\$D_{\mathrm{pref}}$\\chosen vs. rejected};
+  \node[proc=blueA, left=of dpref, text width=2.15cm] (step4)
+    {\textbf{4. DPO}\\$\beta=0.1$\\3 epochs\\preference learning};
+  \node[model, left=of step4, text width=1.9cm] (mfinal)
+    {$M_{\mathrm{final}}$\\syntax + preference};
 
-  \draw[arrow] (base) -- (synth);
-  \draw[arrow] (synth) -- (dsft);
-  \draw[arrow] (dsft) -- (sft);
-  \draw[arrow] (sft) -- (msft);
-  \draw[arrow] (msft) -- (dpoData);
-  \draw[arrow] (dpoData) -- (dpref);
-  \draw[arrow] (dpref) -- (dpo);
-  \draw[arrow] (dpo) -- (mfinal);
+  \node[data, below=1.02cm of mfinal, text width=2.2cm] (prompts)
+    {\textbf{Complex prompts}\\barn scenes\\city skylines\\reefs, harbors};
+  \node[proc=violetA, right=of prompts, text width=2.3cm] (step5a)
+    {\textbf{5a. SD-Turbo}\\prompt $\to$ reference PNG\\1000 images};
+  \node[proc=violetA, right=of step5a, text width=2.25cm] (step5b)
+    {\textbf{5b. Vectorize}\\PNG $\to$ reference SVG\\dataset artifact};
+  \node[data, right=of step5b, text width=2.3cm] (dgrpo)
+    {\textbf{Dataset}\\$D_{\mathrm{GRPO}}$\\prompt + ref PNG\\+ ref SVG};
+  \node[proc=violetA, right=of dgrpo, text width=2.25cm] (step6)
+    {\textbf{6. GRPO}\\8 SVG samples\\render each SVG\\group advantage};
+  \node[model, right=of step6, text width=2.0cm] (out)
+    {DiffuSVG\\final model};
 
-  \draw[arrow] (prompts) -- (sd);
-  \draw[arrow] (sd) -- (vec);
-  \draw[arrow] (vec) -- (dgrpo);
-  \draw[arrow] (dgrpo) -- (grpo);
-  \draw[arrow] (mfinal.south) |- (grpo.north west);
-  \draw[arrow] (rew) -- (grpo);
-  \draw[arrow] (grpo) -- (out);
+  \node[reward, above=0.6cm of step6, text width=2.25cm] (reward)
+    {\textbf{Reward}\\CLIP-I vs PNG\\CLIP-T vs prompt\\element bonus};
+
+  \draw[arrow] (base) -- (step1);
+  \draw[arrow] (step1) -- (dsft);
+  \draw[arrow] (dsft) -- (step2);
+  \draw[arrow] (step2) -- (msft);
+  \draw[arrow] (msft) -- (step3);
+  \draw[arrow] (step3) -- (dpref);
+  \draw[arrow] (dpref) -- (step4);
+  \draw[arrow] (step4) -- (mfinal);
+  \draw[arrow] (mfinal) -- (prompts);
+  \draw[arrow] (prompts) -- (step5a);
+  \draw[arrow] (step5a) -- (step5b);
+  \draw[arrow] (step5b) -- (dgrpo);
+  \draw[arrow] (dgrpo) -- (step6);
+  \draw[arrow] (reward) -- (step6);
+  \draw[arrow] (step6) -- (out);
+  \draw[arrow] (mfinal.south) |- (step6.north west);
 
   \begin{scope}[on background layer]
-    \node[stage=blueA, fit=(base)(synth)(dsft)(sft)(msft)(dpoData)(dpref)(dpo)(mfinal)] {};
-    \node[stage=violetA, fit=(prompts)(sd)(vec)(dgrpo)(rew)(grpo)(out)] {};
+    \node[stage=blueA, fit=(base)(step1)(dsft)(step2)(msft)(step3)(dpref)(step4)(mfinal)] {};
+    \node[stage=violetA, fit=(prompts)(step5a)(step5b)(dgrpo)(reward)(step6)(out)] {};
   \end{scope}
 
-  \node[font=\bfseries\small\color{blueA}, above=0.22cm of dsft] {Stage 1: SVG syntax and preference learning};
-  \node[font=\bfseries\small\color{violetA}, below=0.22cm of dgrpo] {Stage 2: diffusion-guided visual optimization};
+  \node[font=\bfseries\small\color{blueA}, above=0.18cm of dsft]
+    {Stage 1: learn valid SVG syntax and preferences};
+  \node[font=\bfseries\small\color{violetA}, below=0.18cm of dgrpo]
+    {Stage 2: optimize rendered SVGs against diffusion visual targets};
 \end{tikzpicture}}
-\caption{End-to-end DiffuSVG pipeline. Stage 1 learns SVG syntax and preference
-structure. Stage 2 uses diffusion-generated reference images and a CLIP-based
-reward to improve complex scene fidelity.}
+\caption{Detailed DiffuSVG pipeline. The upper stage builds a valid SVG model
+through SFT and DPO. The lower stage creates diffusion references and uses GRPO
+to optimize rendered SVGs for complex scene prompts. Each box shows the script
+role, training signal, or produced dataset artifact.}
 \label{fig:pipeline}
 \end{figure*}
 
 Figure~\ref{fig:pipeline} shows the full training flow. The intermediate
 artifact \(M_{\mathrm{final}}\) is already a useful SVG generator; the GRPO
 stage further optimizes it for visual agreement with reference images.
+
+\begin{figure*}[t]
+\centering
+\resizebox{0.96\textwidth}{!}{
+\begin{tikzpicture}[node distance=0.7cm and 0.75cm]
+  \node[data, text width=3.5cm] (prompt)
+    {\textbf{Complex prompt}\\``red barn with green fields, blue sky,
+    white clouds, yellow sun, fence, and dirt path''};
+  \node[proc=blueA, right=of prompt, text width=4.0cm, align=left] (plan)
+    {\textbf{Planning scratchpad}\\
+    1. sky: blue rect top\\
+    2. field: green rect bottom\\
+    3. barn: red rectangle center\\
+    4. roof: dark triangle\\
+    5. clouds, sun, door, fence, path};
+  \node[proc=greenA, right=of plan, text width=3.4cm, align=left] (svg)
+    {\textbf{SVG target}\\
+    \texttt{<rect fill="\#87CEEB"...>}\\
+    \texttt{<rect fill="\#4CAF50"...>}\\
+    \texttt{<path fill="\#B22222"...>}\\
+    \texttt{... at least 8 elements}};
+  \node[reward, right=of svg, text width=3.2cm] (rewarded)
+    {\textbf{GRPO check}\\render SVG\\compare to SD image\\reward best of 8};
+
+  \draw[arrow] (prompt) -- (plan);
+  \draw[arrow] (plan) -- (svg);
+  \draw[arrow] (svg) -- (rewarded);
+
+  \node[below=0.25cm of plan, font=\scriptsize\color{grayA}, text width=8.5cm, align=center]
+    {The plan is not kept in the final dataset output. It is a temporary
+    generation scaffold that forces object coverage before SVG code begins.};
+\end{tikzpicture}}
+\caption{Worked example for a complex prompt. The same prompt pattern is used
+in SFT generation, DPO candidate generation, GRPO sampling, and inference.}
+\label{fig:worked-example}
+\end{figure*}
 
 \section{Method}
 
@@ -391,10 +446,12 @@ policy. Each SVG is rendered to a bitmap using CairoSVG. Rewards are computed
 from rendered images, not code strings:
 
 \begin{equation}
-r(y,x,I_{\mathrm{ref}}) =
-0.45\,s_I(\render(y), I_{\mathrm{ref}})
-+ 0.40\,s_T(\render(y), x)
-+ 0.15\,b_{\mathrm{elem}}(y),
+\begin{aligned}
+r(y,x,I_{\mathrm{ref}}) ={}&
+0.45\,s_I(\render(y), I_{\mathrm{ref}}) \\
+&+ 0.40\,s_T(\render(y), x)
++ 0.15\,b_{\mathrm{elem}}(y).
+\end{aligned}
 \end{equation}
 
 where \(s_I\) is CLIP image-image similarity, \(s_T\) is CLIP text-image
@@ -452,7 +509,7 @@ corpora. This keeps the pipeline reproducible and avoids manual annotation.
 \centering
 \caption{Datasets produced by the pipeline.}
 \label{tab:datasets}
-\begin{tabularx}{\linewidth}{@{}lXr@{}}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xr@{}}
 \toprule
 \textbf{Dataset} & \textbf{Role} & \textbf{Size} \\
 \midrule
@@ -460,7 +517,7 @@ corpora. This keeps the pipeline reproducible and avoids manual annotation.
 Conversation-format SVG examples generated by the base model and filtered for
 validity, color, and element count. & 1000 \\
 \(D_{\mathrm{pref}}\) &
-Chosen/rejected SVG pairs built from five candidates per prompt. & up to 1500 prompts \\
+Chosen/rejected SVG pairs built from five candidates per prompt. & 1500 prompts \\
 \(D_{\mathrm{GRPO}}\) &
 Complex prompts with SD-Turbo reference PNGs and vectorized SVG artifacts. & 1000 \\
 \bottomrule
@@ -608,38 +665,5 @@ practical change for complex scenes because it forces explicit scene
 decomposition before code emission. Combined with SFT, DPO, and GRPO, the system
 is expected to produce more complete and recognizable SVGs for medium and
 complex prompts than a base vision-language model.
-
-\begin{thebibliography}{9}
-\bibitem{raffel2020}
-C. Raffel et al., ``Exploring the Limits of Transfer Learning with a Unified
-Text-to-Text Transformer,'' \emph{JMLR}, 2020.
-
-\bibitem{hu2021lora}
-E. Hu et al., ``LoRA: Low-Rank Adaptation of Large Language Models,'' 2021.
-
-\bibitem{rafailov2023dpo}
-R. Rafailov et al., ``Direct Preference Optimization: Your Language Model is
-Secretly a Reward Model,'' 2023.
-
-\bibitem{radford2021clip}
-A. Radford et al., ``Learning Transferable Visual Models From Natural Language
-Supervision,'' \emph{ICML}, 2021.
-
-\bibitem{rombach2022ldm}
-R. Rombach et al., ``High-Resolution Image Synthesis with Latent Diffusion
-Models,'' \emph{CVPR}, 2022.
-
-\bibitem{sauer2023turbo}
-A. Sauer et al., ``Adversarial Diffusion Distillation,'' 2023.
-
-\bibitem{qwen}
-Qwen Team, ``Qwen2.5-VL Technical Report,'' 2025.
-
-\bibitem{svg}
-W3C, ``Scalable Vector Graphics (SVG) 2,'' W3C Candidate Recommendation.
-
-\bibitem{cairosvg}
-CairoSVG contributors, ``CairoSVG: SVG converter based on Cairo.''
-\end{thebibliography}
 
 \end{document}
