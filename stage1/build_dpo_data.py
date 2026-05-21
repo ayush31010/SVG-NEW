@@ -8,7 +8,7 @@ Preference rules (IntroSVG §3.2):
   1. Renderable always beats non-renderable
   2. Higher GPT-4o score wins if gap ≥ δ
 
-Prompts are drawn from the same pool used in Step 1 (PROMPT_TEMPLATES).
+Prompts are drawn from the same complex prompt file used in Step 1.
 
 Output: data/d_pref_g.jsonl
     {"prompt": "...", "chosen": "<svg>...</svg>", "rejected": "<svg>...</svg>"}
@@ -41,8 +41,8 @@ SCORE_DELTA = 1
 GPT_MODEL   = "gpt-4o"
 MAX_RETRIES = 5
 
-# Import prompt pool from Step 1
-from generate_sft_data import PROMPT_TEMPLATES, _make_prompt
+# Import prompt utilities from Step 1
+from generate_sft_data import DEFAULT_PROMPT_FILE, _make_prompt, load_training_prompts
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -167,11 +167,12 @@ def main(args):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Sample prompts from shared pool
-    pool = PROMPT_TEMPLATES * ((args.n_prompts // len(PROMPT_TEMPLATES)) + 2)
+    # Sample complex prompts from the shared Stage 1 prompt source
+    prompt_source = load_training_prompts(args.prompt_file)
+    pool = prompt_source * ((args.n_prompts // len(prompt_source)) + 2)
     random.shuffle(pool)
     prompts = pool[:args.n_prompts]
-    log.info(f"Using {len(prompts):,} prompts")
+    log.info(f"Using {len(prompts):,} complex DPO prompts from {len(prompt_source)} source prompts")
 
     log.info(f"Loading M_SFT from {args.sft_ckpt} ...")
     model, processor = _load_model(args.sft_ckpt)
@@ -210,5 +211,6 @@ if __name__ == "__main__":
     parser.add_argument("--n-prompts",    type=int, default=1500)
     parser.add_argument("--n-candidates", type=int, default=3)
     parser.add_argument("--delta",        type=int, default=SCORE_DELTA)
+    parser.add_argument("--prompt-file",  default=str(DEFAULT_PROMPT_FILE))
     args = parser.parse_args()
     main(args)

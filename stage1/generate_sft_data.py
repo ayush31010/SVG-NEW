@@ -32,6 +32,7 @@ DATA_DIR   = Path("data")
 OUT_FILE   = DATA_DIR / "d_sft.jsonl"
 INFO_FILE  = DATA_DIR / "dataset_info.json"
 MODEL_NAME = "Qwen/Qwen2.5-VL-7B-Instruct"
+DEFAULT_PROMPT_FILE = Path("../prompts.txt")
 
 MIN_FILLED_ELEMENTS = 8
 MIN_UNIQUE_COLORS = 4
@@ -160,6 +161,47 @@ PROMPT_TEMPLATES = [
     "a rocket launching into a starry sky with a bright exhaust flame below",
 ]
 
+COMPLEX_FALLBACK_PROMPTS = [
+    "a red barn with green fields below and blue sky above with white clouds",
+    "a lighthouse on rocky cliffs with waves crashing below and seagulls above",
+    "a city skyline at night with lit windows and a yellow moon above",
+    "a sailboat on blue water with an orange sunset sky behind it",
+    "a mountain peak with white snow at the top and green pine trees below",
+    "a tropical beach with palm trees on the left and a setting sun on the water",
+    "a campfire in a forest clearing with stars in the dark sky above",
+    "a waterfall over mossy rocks into a blue pool surrounded by green ferns",
+    "a desert scene with orange sand dunes and a cactus under a hot yellow sun",
+    "a hot air balloon floating above a green and yellow patchwork of fields",
+    "a snowy cabin in a pine forest with a chimney and orange light in the windows",
+    "a medieval castle on a green hill above a blue moat with colorful flags",
+    "a coral reef with orange and yellow fish swimming above blue and purple coral",
+    "a rainbow over green rolling hills with a blue river in the valley",
+    "a Japanese pagoda on a hill with pink cherry blossom trees on each side",
+    "a savanna at sunset with a silhouette of an acacia tree and orange sky",
+    "a spring meadow with colorful wildflowers a stream and butterflies",
+    "a harbor town with colorful boats on water and houses on a hillside",
+    "a winter scene with a frozen pond bare trees and snow on the ground",
+    "a rocket launching into a starry sky with a bright exhaust flame below",
+]
+
+
+def load_training_prompts(prompt_file: str | Path | None = None) -> list[str]:
+    """Load complex scene prompts for SFT/DPO; fall back to built-in scene prompts."""
+    path = Path(prompt_file) if prompt_file else DEFAULT_PROMPT_FILE
+    prompts: list[str] = []
+
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            prompt = line.strip()
+            if prompt and not prompt.startswith("#"):
+                prompts.append(prompt)
+        if prompts:
+            log.info(f"Loaded {len(prompts)} complex prompts from {path}")
+            return prompts
+
+    log.warning(f"Prompt file not found or empty: {path}. Using built-in complex fallback prompts.")
+    return COMPLEX_FALLBACK_PROMPTS
+
 
 def _make_prompt(text: str) -> str:
     return (
@@ -287,10 +329,14 @@ def main(args):
     model.eval()
     processor = AutoProcessor.from_pretrained(MODEL_NAME)
 
-    # Build prompt list, shuffle for variety
-    pool = PROMPT_TEMPLATES * ((args.n_samples // len(PROMPT_TEMPLATES)) + 2)
+    # Build prompt list from complex scene prompts, shuffle for variety.
+    # Stage 1 is intentionally complex-focused so SFT sees background,
+    # midground, foreground, and multi-object layouts before DPO/GRPO.
+    prompt_source = load_training_prompts(args.prompt_file)
+    pool = prompt_source * ((args.n_samples // len(prompt_source)) + 2)
     random.shuffle(pool)
     prompts = pool[:args.n_samples]
+    log.info(f"Using {len(prompt_source)} complex source prompts for SFT data generation")
 
     n_ok = n_done
     n_total_tried = 0
@@ -358,5 +404,7 @@ if __name__ == "__main__":
                         help="Total accepted samples to collect")
     parser.add_argument("--batch-size", type=int, default=1,
                         help="Kept for CLI compatibility, ignored (always 1)")
+    parser.add_argument("--prompt-file", default=str(DEFAULT_PROMPT_FILE),
+                        help="Complex prompt file to use for SFT generation")
     args = parser.parse_args()
     main(args)
