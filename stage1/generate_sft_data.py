@@ -6,7 +6,8 @@ examples (self-supervised). Temperature sampling ensures diversity across runs.
 
 Filters:
   - Must contain <svg>...</svg> tags
-  - Must have ≥ 3 elements with fill colors (is_colorful)
+  - Must have enough filled shape elements, color variety, and SVG detail
+  - Must not duplicate an already saved SVG
 
 Resume-safe: if data/d_sft.jsonl already has rows, appends from where it left off.
 
@@ -31,6 +32,10 @@ DATA_DIR   = Path("data")
 OUT_FILE   = DATA_DIR / "d_sft.jsonl"
 INFO_FILE  = DATA_DIR / "dataset_info.json"
 MODEL_NAME = "Qwen/Qwen2.5-VL-7B-Instruct"
+
+MIN_FILLED_ELEMENTS = 8
+MIN_UNIQUE_COLORS = 4
+MIN_SVG_CHARS = 700
 
 PROMPT_TEMPLATES = [
     # Nature
@@ -179,6 +184,45 @@ def _count_filled_elements(svg: str) -> int:
     return len(re.findall(r'<(?:path|rect|circle|ellipse|polygon|polyline)[^>]+fill', svg))
 
 
+def _fill_colors(svg: str) -> list[str]:
+    """Return normalized visible fill colors from SVG shape elements."""
+    colors = re.findall(
+        r'<(?:path|rect|circle|ellipse|polygon|polyline|line)\b[^>]*\bfill\s*=\s*["\']([^"\']+)["\']',
+        svg,
+        flags=re.IGNORECASE,
+    )
+    return [
+        c.strip().lower()
+        for c in colors
+        if c.strip().lower() not in {"none", "transparent"}
+    ]
+
+
+def _svg_signature(svg: str) -> str:
+    """Normalize SVG text enough to catch exact repeated generations."""
+    return re.sub(r"\s+", "", svg).lower()
+
+
+def _quality_failure_reason(svg: str, seen_signatures: set[str]) -> str | None:
+    """Return a rejection reason, or None if the SVG passes the quality gate."""
+    filled = _count_filled_elements(svg)
+    if filled < MIN_FILLED_ELEMENTS:
+        return f"fewer than {MIN_FILLED_ELEMENTS} filled elements ({filled})"
+
+    colors = set(_fill_colors(svg))
+    if len(colors) < MIN_UNIQUE_COLORS:
+        return f"fewer than {MIN_UNIQUE_COLORS} unique fill colors ({len(colors)})"
+
+    if len(svg) < MIN_SVG_CHARS:
+        return f"SVG too short ({len(svg)} chars < {MIN_SVG_CHARS})"
+
+    sig = _svg_signature(svg)
+    if sig in seen_signatures:
+        return "duplicate SVG"
+
+    return None
+
+
 def _generate_one(prompt: str, model, processor, device) -> str | None:
     """Generate one SVG for a prompt using temperature sampling."""
     import torch
@@ -214,8 +258,22 @@ def main(args):
 
     # Resume: count rows already in the output file
     n_done = 0
+    seen_signatures: set[str] = set()
     if OUT_FILE.exists():
-        n_done = sum(1 for l in OUT_FILE.read_text(encoding="utf-8").splitlines() if l.strip())
+        for line in OUT_FILE.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            n_done += 1
+            try:
+                row = json.loads(line)
+                svg = next(
+                    c["value"]
+                    for c in row.get("conversations", [])
+                    if c.get("from") == "gpt"
+                )
+                seen_signatures.add(_svg_signature(svg))
+            except Exception:
+                pass
         if n_done >= args.n_samples:
             log.info(f"Already have {n_done} samples, nothing to do.")
             return
@@ -250,13 +308,13 @@ def main(args):
 
             svg = standardize_svg(svg_raw) or svg_raw
 
-            # Filter: must have ≥ 5 filled shape elements
-            if _count_filled_elements(svg) < 5:
-                log.info(f"  rejected (fewer than 3 filled elements)")
-                continue
-
             if not is_colorful(svg):
                 log.info(f"  rejected (not colorful)")
+                continue
+
+            failure = _quality_failure_reason(svg, seen_signatures)
+            if failure is not None:
+                log.info(f"  rejected ({failure})")
                 continue
 
             row = {
@@ -267,6 +325,7 @@ def main(args):
             }
             fout.write(json.dumps(row, ensure_ascii=False) + "\n")
             fout.flush()
+            seen_signatures.add(_svg_signature(svg))
             n_ok += 1
             log.info(f"  accepted {n_ok}/{args.n_samples}  (tried {n_total_tried})")
             if n_ok % 10 == 0:
