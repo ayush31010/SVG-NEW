@@ -193,74 +193,93 @@ rendered SVGs visually match complex scene prompts.
 \begin{figure*}[t]
 \centering
 \resizebox{\textwidth}{!}{
-\begin{tikzpicture}[node distance=0.55cm and 0.58cm]
-  \node[proc=grayA, text width=2.25cm] (base)
-    {\textbf{Base model}\\Qwen2.5-VL-7B\\SVG priors};
-  \node[proc=blueA, right=of base, text width=2.55cm] (step1)
-    {\textbf{1. SFT data}\\\texttt{generate\_sft}\\plan then draw\\1000 kept rows};
-  \node[data, right=of step1, text width=2.45cm] (dsft)
-    {\textbf{Dataset}\\$D_{\mathrm{SFT}}$\\prompt + SVG\\min 5 elements};
-  \node[proc=blueA, right=of dsft, text width=2.25cm] (step2)
-    {\textbf{2. SFT}\\LoRA rank 64\\3 epochs\\SVG syntax};
-  \node[model, right=of step2, text width=1.75cm] (msft)
-    {$M_{\mathrm{SFT}}$};
+\begin{tikzpicture}[node distance=0.55cm and 0.72cm]
+  % Row 1: synthetic SFT data generation
+  \node[data, text width=2.55cm] (pool)
+    {\textbf{Prompt pool}\\icons, objects,\\layered scenes};
+  \node[proc=blueA, right=of pool, text width=2.55cm] (cot)
+    {\textbf{Plan prompt}\\list objects,\\positions, colors};
+  \node[proc=grayA, right=of cot, text width=2.6cm] (base)
+    {\textbf{Qwen2.5-VL-7B}\\base SVG/code\\knowledge};
+  \node[data, right=of base, text width=2.45cm] (raw)
+    {\textbf{Raw SVG}\\model response\\extract \texttt{<svg>}};
+  \node[proc=blueA, right=of raw, text width=2.65cm] (filter)
+    {\textbf{Standardize + filter}\\viewBox 200\\min 5 filled elements};
+  \node[data, right=of filter, text width=2.35cm] (dsft)
+    {\textbf{$D_{\mathrm{SFT}}$}\\1000 prompt/SVG\\training rows};
 
-  \node[proc=blueA, below=0.92cm of msft, text width=2.35cm] (step3)
-    {\textbf{3. DPO data}\\5 candidates\\rank best/worst\\preference pairs};
-  \node[data, left=of step3, text width=2.3cm] (dpref)
-    {\textbf{Dataset}\\$D_{\mathrm{pref}}$\\chosen vs. rejected};
-  \node[proc=blueA, left=of dpref, text width=2.15cm] (step4)
-    {\textbf{4. DPO}\\$\beta=0.1$\\3 epochs\\preference learning};
-  \node[model, left=of step4, text width=1.9cm] (mfinal)
-    {$M_{\mathrm{final}}$\\syntax + preference};
+  % Row 2: preference learning
+  \node[data, below=1.0cm of pool, text width=2.35cm] (dsft2)
+    {\textbf{$D_{\mathrm{SFT}}$}\\conversation\\format};
+  \node[proc=blueA, right=of dsft2, text width=2.4cm] (sft)
+    {\textbf{SFT LoRA}\\rank 64\\3 epochs};
+  \node[model, right=of sft, text width=2.1cm] (msft)
+    {\textbf{$M_{\mathrm{SFT}}$}\\valid SVG\\syntax};
+  \node[proc=blueA, right=of msft, text width=2.55cm] (cand)
+    {\textbf{DPO candidates}\\5 SVGs per prompt\\diverse samples};
+  \node[data, right=of cand, text width=2.45cm] (dpref)
+    {\textbf{$D_{\mathrm{pref}}$}\\chosen/rejected\\pairs};
+  \node[proc=blueA, right=of dpref, text width=2.15cm] (dpo)
+    {\textbf{DPO}\\$\beta=0.1$\\3 epochs};
+  \node[model, right=of dpo, text width=2.25cm] (mfinal)
+    {\textbf{$M_{\mathrm{final}}$}\\syntax +\\preference};
 
-  \node[data, below=1.02cm of mfinal, text width=2.2cm] (prompts)
-    {\textbf{Complex prompts}\\barn scenes\\city skylines\\reefs, harbors};
-  \node[proc=violetA, right=of prompts, text width=2.3cm] (step5a)
-    {\textbf{5a. SD-Turbo}\\prompt $\to$ reference PNG\\1000 images};
-  \node[proc=violetA, right=of step5a, text width=2.25cm] (step5b)
-    {\textbf{5b. Vectorize}\\PNG $\to$ reference SVG\\dataset artifact};
-  \node[data, right=of step5b, text width=2.3cm] (dgrpo)
-    {\textbf{Dataset}\\$D_{\mathrm{GRPO}}$\\prompt + ref PNG\\+ ref SVG};
-  \node[proc=violetA, right=of dgrpo, text width=2.25cm] (step6)
-    {\textbf{6. GRPO}\\8 SVG samples\\render each SVG\\group advantage};
-  \node[model, right=of step6, text width=2.0cm] (out)
-    {DiffuSVG\\final model};
+  % Row 3: diffusion-guided RL
+  \node[data, below=1.0cm of dsft2, text width=2.35cm] (complex)
+    {\textbf{Complex prompts}\\barn, reef,\\harbor, skyline};
+  \node[proc=violetA, right=of complex, text width=2.4cm] (sd)
+    {\textbf{SD-Turbo}\\prompt $\to$\\reference PNG};
+  \node[proc=violetA, right=of sd, text width=2.4cm] (vec)
+    {\textbf{Vectorize}\\reference PNG\\to SVG artifact};
+  \node[data, right=of vec, text width=2.55cm] (dgrpo)
+    {\textbf{$D_{\mathrm{GRPO}}$}\\prompt + ref PNG\\+ ref SVG};
+  \node[proc=violetA, right=of dgrpo, text width=2.55cm] (grpo)
+    {\textbf{GRPO}\\8 samples\\render + reward\\group advantage};
+  \node[reward, above=0.55cm of grpo, text width=2.25cm] (rew)
+    {\textbf{Reward}\\CLIP-I\\CLIP-T\\element bonus};
+  \node[model, right=of grpo, text width=2.3cm] (out)
+    {\textbf{DiffuSVG}\\final complex\\SVG model};
 
-  \node[reward, above=0.6cm of step6, text width=2.25cm] (reward)
-    {\textbf{Reward}\\CLIP-I vs PNG\\CLIP-T vs prompt\\element bonus};
+  % Arrows
+  \draw[arrow] (pool) -- (cot);
+  \draw[arrow] (cot) -- (base);
+  \draw[arrow] (base) -- (raw);
+  \draw[arrow] (raw) -- (filter);
+  \draw[arrow] (filter) -- (dsft);
+  \draw[dashedarrow] (dsft.south) |- (dsft2.east);
 
-  \draw[arrow] (base) -- (step1);
-  \draw[arrow] (step1) -- (dsft);
-  \draw[arrow] (dsft) -- (step2);
-  \draw[arrow] (step2) -- (msft);
-  \draw[arrow] (msft) -- (step3);
-  \draw[arrow] (step3) -- (dpref);
-  \draw[arrow] (dpref) -- (step4);
-  \draw[arrow] (step4) -- (mfinal);
-  \draw[arrow] (mfinal) -- (prompts);
-  \draw[arrow] (prompts) -- (step5a);
-  \draw[arrow] (step5a) -- (step5b);
-  \draw[arrow] (step5b) -- (dgrpo);
-  \draw[arrow] (dgrpo) -- (step6);
-  \draw[arrow] (reward) -- (step6);
-  \draw[arrow] (step6) -- (out);
-  \draw[arrow] (mfinal.south) |- (step6.north west);
+  \draw[arrow] (dsft2) -- (sft);
+  \draw[arrow] (sft) -- (msft);
+  \draw[arrow] (msft) -- (cand);
+  \draw[arrow] (cand) -- (dpref);
+  \draw[arrow] (dpref) -- (dpo);
+  \draw[arrow] (dpo) -- (mfinal);
+
+  \draw[arrow] (complex) -- (sd);
+  \draw[arrow] (sd) -- (vec);
+  \draw[arrow] (vec) -- (dgrpo);
+  \draw[arrow] (dgrpo) -- (grpo);
+  \draw[arrow] (rew) -- (grpo);
+  \draw[arrow] (grpo) -- (out);
+  \draw[arrow] (mfinal.south) |- (grpo.north west);
 
   \begin{scope}[on background layer]
-    \node[stage=blueA, fit=(base)(step1)(dsft)(step2)(msft)(step3)(dpref)(step4)(mfinal)] {};
-    \node[stage=violetA, fit=(prompts)(step5a)(step5b)(dgrpo)(reward)(step6)(out)] {};
+    \node[stage=blueA, fit=(pool)(cot)(base)(raw)(filter)(dsft)] {};
+    \node[stage=blueA, fit=(dsft2)(sft)(msft)(cand)(dpref)(dpo)(mfinal)] {};
+    \node[stage=violetA, fit=(complex)(sd)(vec)(dgrpo)(rew)(grpo)(out)] {};
   \end{scope}
 
-  \node[font=\bfseries\small\color{blueA}, above=0.18cm of dsft]
-    {Stage 1: learn valid SVG syntax and preferences};
-  \node[font=\bfseries\small\color{violetA}, below=0.18cm of dgrpo]
-    {Stage 2: optimize rendered SVGs against diffusion visual targets};
+  \node[font=\bfseries\small\color{blueA}, left=0.28cm of pool, align=right]
+    {\shortstack[r]{1. Synthetic\\SVG supervision}};
+  \node[font=\bfseries\small\color{blueA}, left=0.28cm of dsft2, align=right]
+    {\shortstack[r]{2. SFT + DPO\\preference learning}};
+  \node[font=\bfseries\small\color{violetA}, left=0.28cm of complex, align=right]
+    {\shortstack[r]{3. Diffusion\\GRPO}};
 \end{tikzpicture}}
-\caption{Detailed DiffuSVG pipeline. The upper stage builds a valid SVG model
-through SFT and DPO. The lower stage creates diffusion references and uses GRPO
-to optimize rendered SVGs for complex scene prompts. Each box shows the script
-role, training signal, or produced dataset artifact.}
+\caption{Detailed DiffuSVG pipeline. The flow is split into synthetic SVG
+supervision, SFT/DPO preference learning, and diffusion-guided GRPO. Example
+prompt callouts show how complex scene prompts enter both the SFT and GRPO
+parts of the system.}
 \label{fig:pipeline}
 \end{figure*}
 
@@ -459,35 +478,50 @@ similarity, and \(b_{\mathrm{elem}}\) rewards a sufficient number of distinct
 filled elements. The CLIP backbone is upgraded to ViT-L/14 for stronger visual
 judgment.
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\resizebox{\linewidth}{!}{
-\begin{tikzpicture}[node distance=0.55cm]
-  \node[proc=violetA, text width=6.3cm] (sample) {
-    sample 8 SVGs from current policy
-  };
-  \node[proc=grayA, below=of sample, text width=6.3cm] (render) {
-    render SVGs to PNGs with CairoSVG
-  };
-  \node[reward, below left=0.55cm and -0.15cm of render, text width=2.0cm] (ci) {CLIP-I\\vs. SD image};
-  \node[reward, below=0.55cm of render, text width=2.0cm] (ct) {CLIP-T\\vs. prompt};
-  \node[reward, below right=0.55cm and -0.15cm of render, text width=2.0cm] (eb) {element\\bonus};
-  \node[model, below=1.25cm of render, text width=4.3cm] (update) {
-    normalize group rewards\\and update policy
-  };
+\resizebox{0.90\textwidth}{!}{
+\begin{tikzpicture}
+  \node[data, text width=2.85cm] (prompt) at (0,0)
+    {\textbf{Prompt + reference}\\$x$ and SD-Turbo\\image $I_{\mathrm{ref}}$};
+  \node[model, text width=2.85cm] (policy) at (3.7,0)
+    {\textbf{Current policy}\\$\pi_\theta$ initialized\\from $M_{\mathrm{final}}$};
+  \node[proc=violetA, text width=2.85cm] (sample) at (7.4,0)
+    {\textbf{Sample group}\\generate 8 SVGs\\$y_1,\ldots,y_8$};
+  \node[proc=grayA, text width=2.85cm] (render) at (11.1,0)
+    {\textbf{Render}\\CairoSVG converts\\SVG $\to$ PNG};
+
+  \node[data, text width=6.1cm] (cands) at (7.4,-1.45)
+    {\textbf{Candidate set}\\
+    $y_1$: sparse barn \quad $y_2$: barn+sky+field \quad $y_3$: sun only\\
+    $\cdots$ \quad $y_8$: barn+clouds+fence+path};
+
+  \node[reward, text width=3.15cm] (score) at (11.1,-3.05)
+    {\textbf{Score each SVG}\\CLIP-I vs ref PNG\\CLIP-T vs prompt\\element bonus};
+  \node[reward, text width=4.75cm] (formula) at (6.85,-3.05)
+    {\textbf{Reward formula}\\
+    $r_i=0.45\,s_I(\render(y_i),I_{\mathrm{ref}})
+    +0.40\,s_T(\render(y_i),x)+0.15\,b_{\mathrm{elem}}(y_i)$};
+  \node[proc=violetA, text width=3.1cm] (adv) at (2.75,-3.05)
+    {\textbf{Group advantage}\\$A_i=(r_i-\bar r)/(\sigma+\epsilon)$};
+  \node[model, text width=2.85cm] (update) at (-0.95,-3.05)
+    {\textbf{GRPO update}\\increase high-$A_i$\\SVG likelihood};
+
+  \draw[arrow] (prompt) -- (policy);
+  \draw[arrow] (policy) -- (sample);
   \draw[arrow] (sample) -- (render);
-  \draw[arrow] (render) -- (ci);
-  \draw[arrow] (render) -- (ct);
-  \draw[arrow] (render) -- (eb);
-  \draw[arrow] (ci) -- (update);
-  \draw[arrow] (ct) -- (update);
-  \draw[arrow] (eb) -- (update);
-  \draw[arrow] (update.east) .. controls +(1.2,0.4) and +(1.2,-0.4) .. (sample.east);
+  \draw[arrow] (render) -- ++(0,-0.75) -| (score.north);
+  \draw[arrow] (score.south) -- ++(0,-0.45) -| (adv.south);
+  \draw[arrow] (adv) -- (update);
+  \draw[arrow] (sample) -- (cands);
+  \draw[arrow] (update.north) .. controls +(0,1.25) and +(-0.7,-1.15) .. (policy.south west);
 \end{tikzpicture}}
-\caption{GRPO reward loop. SVG candidates are rendered before scoring, making
-the reward visual rather than purely syntactic.}
+\caption{GRPO reward loop. For each complex prompt, the policy samples eight
+SVG candidates, renders them, scores them with CLIP-I, CLIP-T, and an element
+bonus, normalizes rewards within the group, and updates the policy toward the
+best rendered SVGs.}
 \label{fig:grpo}
-\end{figure}
+\end{figure*}
 
 For candidate \(i\), the group-relative advantage is
 
